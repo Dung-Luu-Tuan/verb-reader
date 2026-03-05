@@ -65,15 +65,39 @@ export default function VerbTable({ data }: { data: VerbItem[] }) {
     return phoneticMap[base];
   };
 
-  const speak = (text: string, id: number) => {
+  const speak = async (text: string, id: number) => {
     if (typeof window === 'undefined') return;
+
+    try {
+      const [{ Capacitor }, { TextToSpeech }] = await Promise.all([
+        import('@capacitor/core'),
+        import('@capacitor-community/text-to-speech'),
+      ]);
+
+      if (Capacitor.isNativePlatform?.()) {
+        setSpeakingId(id);
+        await TextToSpeech.speak({
+          text,
+          lang: 'en-US',
+          rate: 0.9,
+          pitch: 1.0,
+          volume: 1.0,
+          category: 'ambient',
+        });
+        setSpeakingId(null);
+        return;
+      }
+    } catch (err) {
+      // Fallback to Web Speech API below
+      console.error('Capacitor TTS error', err);
+    }
 
     const hasSpeechApi =
       'speechSynthesis' in window &&
       typeof SpeechSynthesisUtterance !== 'undefined';
 
     if (!hasSpeechApi) {
-      alert('Thiết bị hoặc trình duyệt này không hỗ trợ đọc tiếng Anh tự động.');
+      alert('This device or browser does not support text-to-speech.');
       return;
     }
 
