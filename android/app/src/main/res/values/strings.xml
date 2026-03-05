@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">verb-reader</string>
+    <string name="title_activity_main">verb-reader</string>
+    <string name="package_name">com.verbreader.app</string>
+    <string name="custom_url_scheme">com.verbreader.app</string>
+</resources>

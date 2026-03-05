@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import type * as PDFJS from "pdfjs-dist";
+import { useState } from 'react';
+import type * as PDFJS from 'pdfjs-dist';
 
 export default function UploadZone({
   onParsed,
@@ -10,31 +10,25 @@ export default function UploadZone({
 }) {
   const [loading, setLoading] = useState(false);
 
-  const loadPdfFromBuffer = async (
-    arrayBuffer: ArrayBuffer
-  ) => {
-    const pdfjsLib = (await import(
-      "pdfjs-dist/legacy/build/pdf"
-    )) as unknown as typeof PDFJS;
+  const loadPdfFromBuffer = async (arrayBuffer: ArrayBuffer) => {
+    const pdfjsLib =
+      (await import('pdfjs-dist/legacy/build/pdf')) as unknown as typeof PDFJS;
 
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "/pdf.worker.min.js";
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
 
     const pdf = await pdfjsLib.getDocument({
       data: arrayBuffer,
     }).promise;
 
-    let fullText = "";
+    let fullText = '';
 
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
 
-      const strings = content.items.map(
-        (item: any) => item.str
-      );
+      const strings = content.items.map((item: any) => item.str);
 
-      fullText += strings.join(" ") + "\n";
+      fullText += strings.join(' ') + '\n';
     }
 
     onParsed(fullText);
@@ -50,9 +44,7 @@ export default function UploadZone({
   const handleUseBuiltIn = async () => {
     setLoading(true);
 
-    const response = await fetch(
-      "/500_Verbs_Full_Final.pdf"
-    );
+    const response = await fetch('/500_Verbs_Full_Final.pdf');
     const buffer = await response.arrayBuffer();
 
     await loadPdfFromBuffer(buffer);
@@ -60,40 +52,50 @@ export default function UploadZone({
   };
 
   return (
-    <div className="p-6 border-2 border-dashed rounded-2xl text-center bg-gray-50 shadow-sm">
-      <h2 className="text-lg font-semibold mb-4">
-        Import PDF
-      </h2>
+    <div className="w-full max-w-sm mx-auto">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-slate-200/60 dark:border-slate-800 p-8">
+        {/* Title */}
+        <div className="text-center mb-8">
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+            Get Started
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
+            Select a data source to begin
+          </p>
+        </div>
 
-      <div className="flex flex-col sm:flex-row gap-4 justify-center">
-        {/* Built-in file button */}
-        <button
-          onClick={handleUseBuiltIn}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl transition shadow"
-        >
-          📘 Use 500_Verbs_Full_Final.pdf
-        </button>
+        {/* Buttons */}
+        <div className="flex flex-col gap-3">
+          {/* Upload PDF */}
+          <label className="group relative flex items-center justify-center gap-2 w-full px-6 py-3.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20 active:scale-[0.98] cursor-pointer">
+            <span>Upload PDF</span>
 
-        {/* Upload button */}
-        <label className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-xl cursor-pointer transition shadow">
-          📤 Upload PDF
-          <input
-            type="file"
-            accept="application/pdf"
-            hidden
-            onChange={(e) =>
-              e.target.files &&
-              handleUpload(e.target.files[0])
-            }
-          />
-        </label>
+            <input
+              type="file"
+              accept="application/pdf"
+              hidden
+              onChange={(e) =>
+                e.target.files && handleUpload(e.target.files[0])
+              }
+            />
+          </label>
+
+          {/* Built-in PDF */}
+          <button
+            onClick={handleUseBuiltIn}
+            className="flex items-center justify-center gap-2 w-full px-6 py-3.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-semibold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-all active:scale-[0.98]"
+          >
+            <span>Use Demo Data</span>
+          </button>
+        </div>
+
+        {/* Loading */}
+        {loading && (
+          <p className="mt-6 text-center text-sm text-slate-500 animate-pulse">
+            ⏳ Reading PDF...
+          </p>
+        )}
       </div>
-
-      {loading && (
-        <p className="mt-4 text-gray-600 animate-pulse">
-          ⏳ Reading PDF...
-        </p>
-      )}
     </div>
   );
 }
