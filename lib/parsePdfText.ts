@@ -18,6 +18,5 @@ export function parsePdfText(text: string): VerbItem[] {
     });
   }
 
-  console.log(result[result.length - 1]);
   return result;
 }
