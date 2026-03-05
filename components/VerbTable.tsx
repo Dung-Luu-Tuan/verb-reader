@@ -5,14 +5,78 @@ import { VerbItem } from '@/types/verb';
 
 const PAGE_SIZE = 10;
 
+interface FullWordEntry {
+  value?: {
+    word?: string;
+    phonetics?: {
+      us?: string;
+      uk?: string;
+    };
+  };
+}
+
 export default function VerbTable({ data }: { data: VerbItem[] }) {
   const [search, setSearch] = useState('');
   const [alphabet, setAlphabet] = useState('');
   const [speakingId, setSpeakingId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
-  const [phonetics, setPhonetics] = useState<Record<number, string>>({});
+  const [phoneticMap, setPhoneticMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadDictionary = async () => {
+      try {
+        const res = await fetch('/full-word.json');
+        if (!res.ok) return;
+
+        const json = (await res.json()) as FullWordEntry[];
+        if (cancelled) return;
+
+        const map: Record<string, string> = {};
+        for (const entry of json) {
+          const word = entry?.value?.word;
+          if (!word) continue;
+
+          const phonUS = entry.value?.phonetics?.us;
+          const phonUK = entry.value?.phonetics?.uk;
+          const phon = phonUS || phonUK;
+          if (!phon) continue;
+
+          map[word.toLowerCase()] = phon;
+        }
+
+        setPhoneticMap(map);
+      } catch {
+        // ignore errors; phonetic column will just be empty
+      }
+    };
+
+    void loadDictionary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const getPhoneticForVerb = (verb: string): string | undefined => {
+    const base = verb.split(' ')[0]?.toLowerCase();
+    if (!base) return undefined;
+    return phoneticMap[base];
+  };
 
   const speak = (text: string, id: number) => {
+    if (typeof window === 'undefined') return;
+
+    const hasSpeechApi =
+      'speechSynthesis' in window &&
+      typeof SpeechSynthesisUtterance !== 'undefined';
+
+    if (!hasSpeechApi) {
+      alert('Thiết bị hoặc trình duyệt này không hỗ trợ đọc tiếng Anh tự động.');
+      return;
+    }
+
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'en-US';
@@ -43,51 +107,6 @@ export default function VerbTable({ data }: { data: VerbItem[] }) {
     const start = (currentPage - 1) * PAGE_SIZE;
     return filtered.slice(start, start + PAGE_SIZE);
   }, [filtered, page, totalPages]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    const fetchPhoneticForItem = async (item: VerbItem) => {
-      try {
-        const baseVerb = item.verb.split(' ')[0];
-        const res = await fetch(
-          `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(
-            baseVerb
-          )}`,
-          { signal: controller.signal }
-        );
-
-        if (!res.ok) return;
-
-        const json = await res.json();
-        const entry = Array.isArray(json) ? json[0] : null;
-        const phonetic =
-          entry?.phonetic ||
-          (Array.isArray(entry?.phonetics)
-            ? entry.phonetics.find((p: any) => p.text)?.text
-            : undefined);
-
-        if (!phonetic) return;
-
-        setPhonetics((prev) => {
-          if (prev[item.id] === phonetic) return prev;
-          return { ...prev, [item.id]: phonetic };
-        });
-      } catch {
-        // ignore errors (network, abort, etc.)
-      }
-    };
-
-    paginated.forEach((item) => {
-      if (!phonetics[item.id]) {
-        void fetchPhoneticForItem(item);
-      }
-    });
-
-    return () => {
-      controller.abort();
-    };
-  }, [paginated, phonetics]);
 
   const goToPage = (p: number) => {
     setPage(Math.max(1, Math.min(p, totalPages)));
@@ -170,7 +189,7 @@ export default function VerbTable({ data }: { data: VerbItem[] }) {
                 </td>
 
                 <td className="p-3 text-gray-500">
-                  {phonetics[item.id] ?? ''}
+                  {getPhoneticForVerb(item.verb) ?? item.phonetic ?? ''}
                 </td>
 
                 <td className="p-3 text-gray-700">{item.meaning}</td>
@@ -276,9 +295,9 @@ export default function VerbTable({ data }: { data: VerbItem[] }) {
             </div>
 
             {/* Phonetic */}
-            {phonetics[item.id] && (
+            {(getPhoneticForVerb(item.verb) ?? item.phonetic) && (
               <div className="text-sm text-gray-500 mb-2">
-                {phonetics[item.id]}
+                {getPhoneticForVerb(item.verb) ?? item.phonetic}
               </div>
             )}
 
