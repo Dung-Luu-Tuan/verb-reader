@@ -4,6 +4,7 @@ import { useState } from "react";
 import dynamic from "next/dynamic";
 
 import VerbTable from "@/components/VerbTable";
+import PronunciationModal from "@/components/PronunciationModal";
 import { parsePdfText } from "@/lib/parsePdfText";
 import { VerbItem } from "@/types/verb";
 
@@ -13,8 +14,8 @@ const UploadZone = dynamic(
 );
 
 export default function Home() {
-  const [verbs, setVerbs] =
-    useState<VerbItem[]>([]);
+  const [verbs, setVerbs] = useState<VerbItem[]>([]);
+  const [practiceWord, setPracticeWord] = useState<string | null>(null);
 
   const handleParsed = (text: string) => {
     const parsed = parsePdfText(text);
@@ -30,7 +31,17 @@ export default function Home() {
       <UploadZone onParsed={handleParsed} />
 
       {verbs.length > 0 && (
-        <VerbTable data={verbs} />
+        <VerbTable
+          data={verbs}
+          onPractice={(word) => setPracticeWord(word)}
+        />
+      )}
+
+      {practiceWord && (
+        <PronunciationModal
+          word={practiceWord}
+          onClose={() => setPracticeWord(null)}
+        />
       )}
     </main>
   );

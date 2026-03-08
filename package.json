@@ -9,23 +9,28 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@capacitor-community/speech-recognition": "^7.0.1",
     "@capacitor-community/text-to-speech": "^8.0.0",
     "@capacitor/android": "^8.1.0",
     "@capacitor/cli": "^8.1.0",
     "@capacitor/core": "^8.1.0",
+    "lucide-react": "^0.577.0",
     "next": "16.1.6",
     "pdfjs-dist": "^3.11.174",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "string-similarity": "^4.0.4"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
+    "@tailwindcss/postcss": "^4.2.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/string-similarity": "^4.0.2",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
-    "tailwindcss": "^4",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^4.2.1",
     "typescript": "^5"
   }
 }

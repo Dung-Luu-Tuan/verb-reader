@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
 import { VerbItem } from '@/types/verb';
+import { useEffect, useMemo, useState } from 'react';
+import MobileVerbCard from './MobileVerbCard';
 
 const PAGE_SIZE = 10;
 
@@ -15,7 +16,12 @@ interface FullWordEntry {
   };
 }
 
-export default function VerbTable({ data }: { data: VerbItem[] }) {
+interface Props {
+  data: VerbItem[];
+  onPractice: (word: string) => void;
+}
+
+export default function VerbTable({ data, onPractice }: Props) {
   const [search, setSearch] = useState('');
   const [alphabet, setAlphabet] = useState('');
   const [speakingId, setSpeakingId] = useState<number | null>(null);
@@ -144,12 +150,12 @@ export default function VerbTable({ data }: { data: VerbItem[] }) {
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         {/* Search */}
         <div className="relative w-full sm:w-64">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-sm">
             🔍
           </span>
 
           <input
-            className="w-full pl-9 pr-3 py-2 rounded-xl border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500 transition"
+            className="w-full pl-9 pr-3 py-2 rounded-xl border border-gray-300 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 focus:border-blue-500 dark:focus:border-blue-400 transition"
             placeholder="Search verb..."
             value={search}
             onChange={(e) => {
@@ -167,7 +173,7 @@ export default function VerbTable({ data }: { data: VerbItem[] }) {
               setAlphabet(e.target.value);
               setPage(1);
             }}
-            className="w-full py-2 px-3 rounded-xl border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500 transition appearance-none"
+            className="w-full py-2 px-3 rounded-xl border border-gray-300 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 focus:border-blue-500 dark:focus:border-blue-400 transition appearance-none"
           >
             <option value="">All letters</option>
             {'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((letter) => (
@@ -176,16 +182,16 @@ export default function VerbTable({ data }: { data: VerbItem[] }) {
           </select>
 
           {/* Dropdown icon */}
-          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500">
             ▼
           </span>
         </div>
       </div>
 
       {/* DESKTOP TABLE */}
-      <div className="hidden md:block overflow-auto max-h-[600px] border rounded-2xl shadow-sm custom-scrollbar">
+      <div className="hidden md:block overflow-auto max-h-[600px] border border-gray-300 dark:border-gray-600 rounded-2xl shadow-sm custom-scrollbar">
         <table className="w-full text-sm">
-          <thead className="bg-gray-100 sticky top-0 text-gray-700">
+          <thead className="bg-gray-100 dark:bg-gray-800 sticky top-0 text-gray-700 dark:text-gray-300">
             <tr>
               <th className="p-3 text-left">#</th>
               <th className="p-3 text-left">Verb</th>
@@ -193,39 +199,48 @@ export default function VerbTable({ data }: { data: VerbItem[] }) {
               <th className="p-3 text-left">Meaning</th>
               <th className="p-3 text-left">Example (EN)</th>
               <th className="p-3 text-left">Example (VI)</th>
+              <th className="p-3 text-center">Practice</th>
             </tr>
           </thead>
           <tbody>
             {paginated.map((item) => (
               <tr
                 key={item.id}
-                className={`border-t hover:bg-gray-50 transition ${
-                  speakingId === item.id ? 'bg-yellow-100' : ''
-                }`}
+                className={`border-t hover:bg-gray-50 dark:hover:bg-gray-700 transition ${speakingId === item.id ? 'bg-yellow-100 dark:bg-yellow-400' : ''
+                  }`}
               >
                 <td className="p-3">{item.id}</td>
 
                 <td
-                  className="p-3 text-blue-600 font-medium cursor-pointer hover:underline"
+                  className="p-3 text-blue-600 dark:text-blue-400 font-medium cursor-pointer hover:underline"
                   onClick={() => speak(item.verb, item.id)}
                 >
                   🔊 {item.verb}
                 </td>
 
-                <td className="p-3 text-gray-500">
+                <td className="p-3 text-gray-500 dark:text-gray-400">
                   {getPhoneticForVerb(item.verb) ?? item.phonetic ?? ''}
                 </td>
 
-                <td className="p-3 text-gray-700">{item.meaning}</td>
+                <td className="p-3 text-gray-700 dark:text-gray-300">{item.meaning}</td>
 
                 <td
-                  className="p-3 text-green-600 cursor-pointer hover:underline"
+                  className="p-3 text-green-600 dark:text-green-400 cursor-pointer hover:underline"
                   onClick={() => speak(item.exampleEn, item.id)}
                 >
                   🔊 {item.exampleEn}
                 </td>
 
-                <td className="p-3 text-gray-600">{item.exampleVi}</td>
+                <td className="p-3 text-gray-600 dark:text-gray-400">{item.exampleVi}</td>
+
+                <td className="p-3 text-center">
+                  <button
+                    onClick={() => onPractice(item.verb)}
+                    className="px-2 py-1 text-sm rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition"
+                  >
+                    🎤
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -235,16 +250,16 @@ export default function VerbTable({ data }: { data: VerbItem[] }) {
       {/* PAGINATION */}
       {totalPages > 1 && (
         <div className="flex flex-wrap items-center justify-between gap-4 mt-4 py-3">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
             Showing {(currentPage - 1) * PAGE_SIZE + 1} - {Math.min(currentPage * PAGE_SIZE, filtered.length)} / {filtered.length}
           </p>
           <div className="flex items-center gap-2">
             <button
               onClick={() => goToPage(page - 1)}
               disabled={currentPage <= 1}
-              className="px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
             >
-              ← 
+              ←
             </button>
             <div className="flex items-center gap-1">
               {Array.from({ length: totalPages }, (_, i) => i + 1)
@@ -259,14 +274,13 @@ export default function VerbTable({ data }: { data: VerbItem[] }) {
                   const showEllipsis = prev !== undefined && p - prev > 1;
                   return (
                     <span key={p} className="flex items-center gap-1">
-                      {showEllipsis && <span className="px-1 text-gray-400">…</span>}
+                      {showEllipsis && <span className="px-1 text-gray-400 dark:text-gray-500">…</span>}
                       <button
                         onClick={() => goToPage(p)}
-                        className={`min-w-8 px-2 py-1.5 rounded-lg text-sm font-medium transition ${
-                          currentPage === p
+                        className={`min-w-8 px-2 py-1.5 rounded-lg text-sm font-medium transition ${currentPage === p
                             ? 'bg-blue-600 text-white'
-                            : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-                        }`}
+                            : 'border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                          }`}
                       >
                         {p}
                       </button>
@@ -277,9 +291,9 @@ export default function VerbTable({ data }: { data: VerbItem[] }) {
             <button
               onClick={() => goToPage(page + 1)}
               disabled={currentPage >= totalPages}
-              className="px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
             >
-             →
+              →
             </button>
           </div>
         </div>
@@ -288,69 +302,14 @@ export default function VerbTable({ data }: { data: VerbItem[] }) {
       {/* MOBILE CARD VIEW */}
       <div className="md:hidden space-y-4">
         {paginated.map((item) => (
-          <div
+          <MobileVerbCard
             key={item.id}
-            className={`relative rounded-2xl border p-4 shadow-sm transition-all ${
-              speakingId === item.id
-                ? 'bg-yellow-50 border-yellow-300'
-                : 'bg-white border-gray-200'
-            }`}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-medium text-gray-400">
-                Verb #{item.id}
-              </span>
-
-              <button
-                onClick={() => speak(item.verb, item.id)}
-                className="flex items-center gap-1 text-blue-600 font-semibold hover:text-blue-700"
-              >
-                🔊
-              </button>
-            </div>
-
-            {/* Verb */}
-            <div
-              onClick={() => speak(item.verb, item.id)}
-              className="text-xl font-bold text-blue-600 cursor-pointer mb-1"
-            >
-              {item.verb}
-            </div>
-
-            {/* Phonetic */}
-            {(getPhoneticForVerb(item.verb) ?? item.phonetic) && (
-              <div className="text-sm text-gray-500 mb-2">
-                {getPhoneticForVerb(item.verb) ?? item.phonetic}
-              </div>
-            )}
-
-            {/* Meaning */}
-            <div className="text-gray-700 mb-3 leading-relaxed">
-              {item.meaning}
-            </div>
-
-            {/* Example EN */}
-            <div
-              onClick={() => speak(item.exampleEn, item.id)}
-              className="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-2 cursor-pointer hover:bg-blue-100 transition"
-            >
-              <p className="text-xs text-blue-500 mb-1 font-medium">Example</p>
-
-              <p className="text-blue-800 font-medium">🔊 {item.exampleEn}</p>
-            </div>
-
-            {/* Example VI */}
-            {item.exampleVi && (
-              <div className="bg-gray-50 border border-gray-100 rounded-lg p-3">
-                <p className="text-xs text-gray-400 mb-1 font-medium">
-                  Translation
-                </p>
-
-                <p className="text-gray-700">{item.exampleVi}</p>
-              </div>
-            )}
-          </div>
+            item={item}
+            speakingId={speakingId}
+            onSpeak={speak}
+            getPhonetic={getPhoneticForVerb}
+            onPractice={onPractice}
+          />
         ))}
       </div>
     </div>
