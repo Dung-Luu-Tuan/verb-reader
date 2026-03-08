@@ -39,6 +39,7 @@ export default function Home() {
 
       {practiceWord && (
         <PronunciationModal
+          key={practiceWord}
           word={practiceWord}
           onClose={() => setPracticeWord(null)}
         />
