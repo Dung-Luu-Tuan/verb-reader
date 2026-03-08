@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import stringSimilarity from 'string-similarity'
-import { Mic, Loader2, X } from 'lucide-react'
+import { SpeechRecognition } from "@capacitor-community/speech-recognition"
+import { Capacitor } from "@capacitor/core"
+import { Loader2, Mic, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import Portal from './Portal'
 
 interface Props {
@@ -23,74 +24,121 @@ export default function PronunciationModal({ word, onClose }: Props) {
     }
   }, [])
 
-  const startListening = () => {
-    const SpeechRecognition =
+  const startListening = async () => {
+    // ===== MOBILE (Android / iOS) =====
+    if (Capacitor.getPlatform() !== "web") {
+
+      try {
+        const permission = await SpeechRecognition.requestPermissions()
+
+        if (permission.speechRecognition !== "granted") {
+          alert("Microphone permission denied")
+          return
+        }
+
+        setListening(true)
+
+        const result = await SpeechRecognition.start({
+          language: "en-US",
+          maxResults: 1,
+          partialResults: false
+        })
+
+        const transcript = result.matches?.[0]?.toLowerCase().trim() || ""
+        const confidence = 1 // plugin không trả confidence
+
+        console.log("Transcript:", transcript)
+
+        setSpoken(transcript)
+
+        if (transcript !== word.toLowerCase()) {
+          setScore(0)
+        } else {
+          setScore(Math.round(confidence * 100))
+        }
+
+        setListening(false)
+
+      } catch (err) {
+        console.log("Speech error:", err)
+        setListening(false)
+      }
+
+      return
+    }
+
+    // ===== WEB (code cũ của bạn) =====
+
+    const SpeechRecognitionAPI =
       (window as any).SpeechRecognition ||
       (window as any).webkitSpeechRecognition
 
-    if (!SpeechRecognition) {
+    if (!SpeechRecognitionAPI) {
       alert("Speech recognition not supported on this device")
       return
     }
 
-    const recognition = new SpeechRecognition()
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.getTracks().forEach((track: MediaStreamTrack) => track.stop())
+    } catch (err: any) {
+      console.log("Mic error:", err)
+      alert("Microphone permission denied")
+      return
+    }
+
+    const recognition = new SpeechRecognitionAPI()
 
     recognition.lang = "en-US"
     recognition.interimResults = false
-    recognition.maxAlternatives = 3
-    recognition.continuous = false
+    recognition.maxAlternatives = 1
+    recognition.continuous = true
 
     setListening(true)
 
+    recognition.onstart = () => {
+      console.log("🎤 Speech started")
+    }
+
     recognition.onresult = (event: any) => {
-      const target = word.toLowerCase().trim()
+      const result = event.results[0][0]
 
-      let bestTranscript = ""
-      let bestScore = 0
+      const transcript = result.transcript.toLowerCase().trim()
+      const confidence = result.confidence ?? 0
 
-      // duyệt tất cả alternatives
-      for (let i = 0; i < event.results[0].length; i++) {
-        const alt = event.results[0][i]
+      console.log("Transcript:", transcript)
+      console.log("Confidence:", confidence)
 
-        const transcript = alt.transcript.toLowerCase().trim()
-        const confidence = alt.confidence || 0
+      setSpoken(transcript)
 
-        const similarity = stringSimilarity.compareTwoStrings(
-          transcript,
-          target
-        )
-
-        const score = similarity * confidence
-
-        if (score > bestScore) {
-          bestScore = score
-          bestTranscript = transcript
-        }
+      if (transcript !== word.toLowerCase()) {
+        setScore(0)
+      } else {
+        setScore(Math.round(confidence * 100))
       }
 
-      setSpoken(bestTranscript)
-
-      const finalScore = Math.round(bestScore * 100)
-
-      setScore(finalScore)
+      recognition.stop()
       setListening(false)
     }
 
-    recognition.onerror = (err: any) => {
-      console.error("Speech recognition error:", err)
+    recognition.onerror = (event: any) => {
+      console.log("❌ Speech error:", event.error)
       setListening(false)
     }
 
     recognition.onend = () => {
+      console.log("Speech ended")
       setListening(false)
     }
 
-    try {
-      recognition.start()
-    } catch (err) {
-      console.error(err)
-      setListening(false)
-    }
+    setTimeout(() => {
+      try {
+        recognition.start()
+      } catch (err) {
+        console.log("Start error:", err)
+        setListening(false)
+      }
+    }, 400)
   }
 
   return (
