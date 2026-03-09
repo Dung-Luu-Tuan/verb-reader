@@ -1,182 +1,225 @@
-'use client'
+'use client';
 
-import { SpeechRecognition } from "@capacitor-community/speech-recognition"
-import { Capacitor } from "@capacitor/core"
-import { Loader2, Mic, X } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
-import Portal from "./Portal"
+import { SpeechRecognition } from '@capacitor-community/speech-recognition';
+import { Capacitor } from '@capacitor/core';
+import { Loader2, Mic, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import Portal from './Portal';
 
 interface Props {
-  word: string
-  onClose: () => void
+  word: string;
+  onClose: () => void;
 }
 
 export default function PronunciationModal({ word, onClose }: Props) {
+  const [spoken, setSpoken] = useState('');
+  const [score, setScore] = useState<number | null>(null);
+  const [listening, setListening] = useState(false);
+  const [cooldown, setCooldown] = useState(false);
 
-  const [spoken, setSpoken] = useState("")
-  const [score, setScore] = useState<number | null>(null)
-  const [listening, setListening] = useState(false)
-
-  const recognitionRef = useRef<any>(null)
+  const recognitionRef = useRef<any>(null);
+  const cooldownRef = useRef(false);
 
   // Lock scroll
   useEffect(() => {
-    const prev = document.body.style.overflow
-    document.body.style.overflow = "hidden"
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     return () => {
-      document.body.style.overflow = prev
-    }
-  }, [])
+      document.body.style.overflow = prev;
+    };
+  }, []);
 
   // Init mobile permission
   useEffect(() => {
     const init = async () => {
-      if (Capacitor.getPlatform() === "web") return
+      if (Capacitor.getPlatform() === 'web') return;
       try {
-        await SpeechRecognition.requestPermissions()
+        await SpeechRecognition.requestPermissions();
       } catch (err) {
-        console.log(err)
+        console.log(err);
       }
-    }
-    init()
-  }, [])
-
-  // Cleanup khi unmount
-  useEffect(() => {
-    return () => stopRecognition()
-  }, [])
-
-  // Reset khi đổi word
-  useEffect(() => {
-    setSpoken("")
-    setScore(null)
-    stopRecognition()
-  }, [word])
+    };
+    init();
+  }, []);
 
   const stopRecognition = () => {
     if (recognitionRef.current) {
       try {
-        recognitionRef.current.onend = null
-        recognitionRef.current.onresult = null
-        recognitionRef.current.onerror = null
-        recognitionRef.current.stop()
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.stop();
       } catch {}
-      recognitionRef.current = null
+      recognitionRef.current = null;
     }
 
-    if (Capacitor.getPlatform() !== "web") {
+    if (Capacitor.getPlatform() !== 'web') {
       try {
-        SpeechRecognition.stop()
+        SpeechRecognition.stop();
       } catch {}
     }
 
-    setListening(false)
-  }
+    setListening(false);
+  };
 
   const handleClose = () => {
-    stopRecognition()
-    onClose()
-  }
+    stopRecognition();
+    onClose();
+  };
 
   const startListening = async () => {
+    if (listening || cooldownRef.current || cooldown) return;
 
-    if (listening) return
-
-    // =====================
-    // MOBILE
-    // =====================
-    if (Capacitor.getPlatform() !== "web") {
+    if (Capacitor.getPlatform() !== 'web') {
       try {
-        const permission = await SpeechRecognition.checkPermissions()
+        const permission = await SpeechRecognition.checkPermissions();
 
-        if (permission.speechRecognition !== "granted") {
-          alert("Microphone permission denied")
-          return
+        if (permission.speechRecognition !== 'granted') {
+          alert('Microphone permission denied');
+          return;
         }
 
-        setListening(true)
+        cooldownRef.current = true;
+        setListening(true);
 
-        const result = await SpeechRecognition.start({
-          language: "en-US",
-          maxResults: 1,
-          partialResults: false
-        })
+        const doStart = () =>
+          SpeechRecognition.start({
+            language: 'en-US',
+            maxResults: 1,
+            partialResults: false,
+          });
 
-        const transcript = result.matches?.[0]?.toLowerCase().trim() || ""
+        let result;
+        let retries = 0;
+        const maxRetries = 3;
 
-        setSpoken(transcript)
-        setScore(transcript === word.toLowerCase() ? 100 : 0)
-        setListening(false)
+        while (retries <= maxRetries) {
+          try {
+            result = await doStart()
+            break
+          } catch (err: any) {
+            const msg = err?.message || ''
+            const isBusy = msg.includes('busy')
+        
+            if (isBusy && retries < maxRetries) {
+              retries++
+              try { await SpeechRecognition.stop() } catch {}
+              await new Promise(r => setTimeout(r, 500 * retries))
+            } else {
+              throw err
+            }
+          }
+        }
 
+        const transcript = result?.matches?.[0]?.toLowerCase().trim() || '';
+        setSpoken(transcript);
+        setScore(transcript === word.toLowerCase() ? 100 : 0);
       } catch (err) {
-        console.log("Speech error:", err)
-        setListening(false)
+        console.log('Speech error:', err);
+      } finally {
+        setListening(false);
+        // Don't await stop() – after "No match" it can hang on Android; fire-and-forget
+        try {
+          void SpeechRecognition.stop();
+        } catch {}
+        // Cooldown: wait for native engine to release before allowing another start
+        const COOLDOWN_MS = 1500;
+        setCooldown(true);
+        await new Promise((r) => setTimeout(r, COOLDOWN_MS));
+        setCooldown(false);
+        cooldownRef.current = false;
       }
 
-      return
+      return;
     }
-
-    // =====================
-    // WEB
-    // =====================
 
     const SpeechRecognitionAPI =
       (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition
+      (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognitionAPI) {
-      alert("Speech recognition not supported")
-      return
+      alert('Speech recognition not supported');
+      return;
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      stream.getTracks().forEach(track => track.stop())
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
     } catch {
-      alert("Microphone permission denied")
-      return
+      alert('Microphone permission denied');
+      return;
     }
 
-    // ✅ Dùng stopRecognition để null handlers trước khi stop
-    stopRecognition()
+    stopRecognition();
 
-    const recognition = new SpeechRecognitionAPI()
-    recognitionRef.current = recognition
+    const recognition = new SpeechRecognitionAPI();
+    recognitionRef.current = recognition;
 
-    recognition.lang = "en-US"
-    recognition.interimResults = false
-    recognition.maxAlternatives = 1
-    recognition.continuous = false
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.continuous = false;
 
-    setListening(true)
+    setListening(true);
 
     recognition.onresult = (event: any) => {
-      const result = event.results[0][0]
-      const transcript = result.transcript.toLowerCase().trim()
-      const confidence = result.confidence ?? 0
-
-      setSpoken(transcript)
-      setScore(transcript === word.toLowerCase() ? Math.round(confidence * 100) : 0)
-    }
+      const result = event.results[0][0];
+      const transcript = result.transcript.toLowerCase().trim();
+      const confidence = result.confidence ?? 0;
+      setSpoken(transcript);
+      setScore(
+        transcript === word.toLowerCase() ? Math.round(confidence * 100) : 0,
+      );
+    };
 
     recognition.onerror = (event: any) => {
-      console.log("Speech error:", event.error)
-      setListening(false)
-    }
+      console.log('Speech error:', event.error);
+      setListening(false);
+    };
 
     recognition.onend = () => {
-      setListening(false)
-    }
+      setListening(false);
+    };
 
     setTimeout(() => {
       try {
-        recognition.start()
+        recognition.start();
       } catch (err) {
-        console.log("Start error:", err)
-        setListening(false)
+        console.log('Start error:', err);
+        setListening(false);
       }
-    }, 250)
-  }
+    }, 250);
+  };
+
+  useEffect(() => {
+    return () => stopRecognition();
+  }, []);
+
+  useEffect(() => {
+    setSpoken('');
+    setScore(null);
+    stopRecognition();
+  }, [word]);
+
+  useEffect(() => {
+    let listener: any
+  
+    const setup = async () => {
+      listener = await SpeechRecognition.addListener('listeningState', (state: any) => {
+        if (state?.status === 'stopped') {
+          cooldownRef.current = false
+        }
+      })
+    }
+  
+    if (Capacitor.getPlatform() !== 'web') {
+      setup()
+    }
+  
+    return () => {
+      listener?.remove()
+    }
+  }, [])
 
   return (
     <Portal>
@@ -187,16 +230,15 @@ export default function PronunciationModal({ word, onClose }: Props) {
         <div
           onClick={(e) => e.stopPropagation()}
           style={{
-            position: "fixed",
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
-            width: "50vw",
-            minWidth: "320px",
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: '50vw',
+            minWidth: '320px',
           }}
           className="rounded-2xl shadow-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-8"
         >
-
           {/* Close */}
           <button
             onClick={handleClose}
@@ -220,17 +262,25 @@ export default function PronunciationModal({ word, onClose }: Props) {
           {/* Speak button */}
           <button
             onClick={startListening}
-            disabled={listening}
+            disabled={listening || cooldown}
             className={`w-full flex items-center justify-center gap-3 py-3 rounded-xl text-base font-medium transition
-              ${listening
-                ? "bg-red-500 text-white animate-pulse cursor-not-allowed"
-                : "bg-blue-600 hover:bg-blue-700 text-white"
+              ${
+                listening
+                  ? 'bg-red-500 text-white animate-pulse cursor-not-allowed'
+                  : cooldown
+                    ? 'bg-gray-400 text-white cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
               }`}
           >
             {listening ? (
               <>
                 <Loader2 className="animate-spin" size={20} />
                 Listening...
+              </>
+            ) : cooldown ? (
+              <>
+                <Loader2 className="animate-spin" size={20} />
+                Wait...
               </>
             ) : (
               <>
@@ -253,9 +303,8 @@ export default function PronunciationModal({ word, onClose }: Props) {
               Score: {score}%
             </div>
           )}
-
         </div>
       </div>
     </Portal>
-  )
+  );
 }
