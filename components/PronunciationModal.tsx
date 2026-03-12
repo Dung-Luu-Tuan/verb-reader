@@ -15,10 +15,8 @@ export default function PronunciationModal({ word, onClose }: Props) {
   const [spoken, setSpoken] = useState('');
   const [score, setScore] = useState<number | null>(null);
   const [listening, setListening] = useState(false);
-  const [cooldown, setCooldown] = useState(false);
 
   const recognitionRef = useRef<any>(null);
-  const cooldownRef = useRef(false);
 
   // Lock scroll
   useEffect(() => {
@@ -49,14 +47,14 @@ export default function PronunciationModal({ word, onClose }: Props) {
         recognitionRef.current.onresult = null;
         recognitionRef.current.onerror = null;
         recognitionRef.current.stop();
-      } catch {}
+      } catch { }
       recognitionRef.current = null;
     }
 
     if (Capacitor.getPlatform() !== 'web') {
       try {
         SpeechRecognition.stop();
-      } catch {}
+      } catch { }
     }
 
     setListening(false);
@@ -68,66 +66,40 @@ export default function PronunciationModal({ word, onClose }: Props) {
   };
 
   const startListening = async () => {
-    if (listening || cooldownRef.current || cooldown) return;
+    if (listening) return;
 
     if (Capacitor.getPlatform() !== 'web') {
       try {
-        const permission = await SpeechRecognition.checkPermissions();
+        let permission = await SpeechRecognition.checkPermissions();
 
         if (permission.speechRecognition !== 'granted') {
-          alert('Microphone permission denied');
-          return;
-        }
-
-        cooldownRef.current = true;
-        setListening(true);
-
-        const doStart = () =>
-          SpeechRecognition.start({
-            language: 'en-US',
-            maxResults: 1,
-            partialResults: false,
-          });
-
-        let result;
-        let retries = 0;
-        const maxRetries = 3;
-
-        while (retries <= maxRetries) {
-          try {
-            result = await doStart()
-            break
-          } catch (err: any) {
-            const msg = err?.message || ''
-            const isBusy = msg.includes('busy')
-        
-            if (isBusy && retries < maxRetries) {
-              retries++
-              try { await SpeechRecognition.stop() } catch {}
-              await new Promise(r => setTimeout(r, 500 * retries))
-            } else {
-              throw err
-            }
+          permission = await SpeechRecognition.requestPermissions();
+          if (permission.speechRecognition !== 'granted') {
+            alert('Microphone permission denied');
+            return;
           }
         }
 
+        setSpoken('');
+        setScore(null);
+        setListening(true); // Optimistically set true
+
+        const result = await SpeechRecognition.start({
+          language: 'en-US',
+          maxResults: 1,
+          partialResults: false,
+          popup: false,
+        });
+
         const transcript = result?.matches?.[0]?.toLowerCase().trim() || '';
-        setSpoken(transcript);
-        setScore(transcript === word.toLowerCase() ? 100 : 0);
-      } catch (err) {
+        if (transcript) {
+          setSpoken(transcript);
+          setScore(transcript === word.toLowerCase() ? 100 : 0);
+        }
+      } catch (err: any) {
         console.log('Speech error:', err);
       } finally {
         setListening(false);
-        // Don't await stop() – after "No match" it can hang on Android; fire-and-forget
-        try {
-          void SpeechRecognition.stop();
-        } catch {}
-        // Cooldown: wait for native engine to release before allowing another start
-        const COOLDOWN_MS = 1500;
-        setCooldown(true);
-        await new Promise((r) => setTimeout(r, COOLDOWN_MS));
-        setCooldown(false);
-        cooldownRef.current = false;
       }
 
       return;
@@ -192,7 +164,26 @@ export default function PronunciationModal({ word, onClose }: Props) {
   };
 
   useEffect(() => {
-    return () => stopRecognition();
+    let listener: any;
+    const setupListener = async () => {
+      // Listen for Android's listeningState to sync correctly even if errors break promise chain
+      listener = await SpeechRecognition.addListener('listeningState', (state: any) => {
+        if (state?.status === 'started') {
+          setListening(true);
+        } else if (state?.status === 'stopped') {
+          setListening(false);
+        }
+      });
+    };
+    
+    if (Capacitor.getPlatform() !== 'web') {
+      setupListener();
+    }
+
+    return () => {
+      stopRecognition();
+      if (listener) listener.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -200,26 +191,6 @@ export default function PronunciationModal({ word, onClose }: Props) {
     setScore(null);
     stopRecognition();
   }, [word]);
-
-  useEffect(() => {
-    let listener: any
-  
-    const setup = async () => {
-      listener = await SpeechRecognition.addListener('listeningState', (state: any) => {
-        if (state?.status === 'stopped') {
-          cooldownRef.current = false
-        }
-      })
-    }
-  
-    if (Capacitor.getPlatform() !== 'web') {
-      setup()
-    }
-  
-    return () => {
-      listener?.remove()
-    }
-  }, [])
 
   return (
     <Portal>
@@ -262,25 +233,17 @@ export default function PronunciationModal({ word, onClose }: Props) {
           {/* Speak button */}
           <button
             onClick={startListening}
-            disabled={listening || cooldown}
+            disabled={listening}
             className={`w-full flex items-center justify-center gap-3 py-3 rounded-xl text-base font-medium transition
-              ${
-                listening
-                  ? 'bg-red-500 text-white animate-pulse cursor-not-allowed'
-                  : cooldown
-                    ? 'bg-gray-400 text-white cursor-not-allowed'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+              ${listening
+                ? 'bg-red-500 text-white animate-pulse cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700 text-white'
               }`}
           >
             {listening ? (
               <>
                 <Loader2 className="animate-spin" size={20} />
                 Listening...
-              </>
-            ) : cooldown ? (
-              <>
-                <Loader2 className="animate-spin" size={20} />
-                Wait...
               </>
             ) : (
               <>
