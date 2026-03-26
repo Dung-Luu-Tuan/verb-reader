@@ -3,6 +3,9 @@
 import { VerbItem } from '@/types/verb';
 import { useEffect, useMemo, useState } from 'react';
 import MobileVerbCard from './MobileVerbCard';
+import { useAuth } from '@/lib/AuthContext';
+import { useApi } from '@/lib/useApi';
+import Pagination from './Pagination';
 
 const PAGE_SIZE = 10;
 
@@ -19,14 +22,19 @@ interface FullWordEntry {
 interface Props {
   data: VerbItem[];
   onPractice: (word: string) => void;
+  onRemove?: (verb: string) => void;
 }
 
-export default function VerbTable({ data, onPractice }: Props) {
+export default function VerbTable({ data, onPractice, onRemove }: Props) {
   const [search, setSearch] = useState('');
   const [alphabet, setAlphabet] = useState('');
   const [speakingId, setSpeakingId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [phoneticMap, setPhoneticMap] = useState<Record<string, string>>({});
+  const { accessToken } = useAuth();
+  const [savedVerbs, setSavedVerbs] = useState<Set<string>>(new Set());
+
+  const api = useApi();
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +72,21 @@ export default function VerbTable({ data, onPractice }: Props) {
       cancelled = true;
     };
   }, []);
+
+  const handleSave = async (item: VerbItem) => {
+    if (!accessToken) return;
+
+    const isSaved = savedVerbs.has(item.verb);
+
+    if (isSaved) {
+      await api.savedVerbs.remove(item.verb);
+      setSavedVerbs(prev => { const s = new Set(prev); s.delete(item.verb); return s; });
+      onRemove?.(item.verb);
+    } else {
+      await api.savedVerbs.save(item);
+      setSavedVerbs(prev => new Set(prev).add(item.verb));
+    }
+  };
 
   const getPhoneticForVerb = (verb: string): string | undefined => {
     const base = verb.split(' ')[0]?.toLowerCase();
@@ -144,6 +167,13 @@ export default function VerbTable({ data, onPractice }: Props) {
 
   const currentPage = Math.min(page, totalPages);
 
+  useEffect(() => {
+    if (!accessToken) return;
+    api.savedVerbs.getAll().then((data) => {
+      setSavedVerbs(new Set((data as VerbItem[]).map((v) => v.verb)));
+    });
+  }, [accessToken]);
+
   return (
     <div className="mt-6 sm:mt-8 -mx-4 px-4 sm:mx-0 sm:px-0">
       {/* FILTER BAR */}
@@ -189,30 +219,31 @@ export default function VerbTable({ data, onPractice }: Props) {
       </div>
 
       {/* DESKTOP TABLE */}
-      <div className="hidden md:block overflow-auto max-h-[600px] border border-gray-300 dark:border-gray-600 rounded-2xl shadow-sm custom-scrollbar">
+      <div className="hidden md:block overflow-auto max-h-[650px] border border-gray-300 dark:border-gray-600 rounded-2xl shadow-sm custom-scrollbar">
         <table className="w-full text-sm">
           <thead className="bg-gray-100 dark:bg-gray-800 sticky top-0 text-gray-700 dark:text-gray-300">
             <tr>
-              <th className="p-3 text-left">#</th>
+              <th className="p-2 text-left">#</th>
               <th className="p-3 text-left">Verb</th>
               <th className="p-3 text-left">Phonetic</th>
               <th className="p-3 text-left">Meaning</th>
               <th className="p-3 text-left">Example (EN)</th>
               <th className="p-3 text-left">Example (VI)</th>
               <th className="p-3 text-center">Practice</th>
+              {accessToken && <th className="p-3 text-center">Save</th>}
             </tr>
           </thead>
           <tbody>
-            {paginated.map((item) => (
+            {paginated.map((item, index) => (
               <tr
                 key={item.id}
                 className={`border-t hover:bg-gray-50 dark:hover:bg-gray-700 transition ${speakingId === item.id ? 'bg-yellow-100 dark:bg-yellow-400' : ''
                   }`}
               >
-                <td className="p-3">{item.id}</td>
+                <td className="p-2">{(index + 1) + (page - 1) * PAGE_SIZE}</td>
 
                 <td
-                  className="p-3 text-blue-600 dark:text-blue-400 font-medium cursor-pointer hover:underline"
+                  className="p-3 text-blue-600 dark:text-blue-400 font-medium cursor-pointer hover:underline text-nowrap"
                   onClick={() => speak(item.verb, item.id)}
                 >
                   🔊 {item.verb}
@@ -241,6 +272,17 @@ export default function VerbTable({ data, onPractice }: Props) {
                     🎤
                   </button>
                 </td>
+                {accessToken && (
+                  <td className="p-3 text-center">
+                    <button
+                      onClick={() => handleSave(item)}
+                      className="px-2 py-1 text-sm rounded-lg transition"
+                      title={savedVerbs.has(item.verb) ? 'Unsave' : 'Save'}
+                    >
+                      {savedVerbs.has(item.verb) ? '🔖' : '🤍'}
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -248,56 +290,13 @@ export default function VerbTable({ data, onPractice }: Props) {
       </div>
 
       {/* PAGINATION */}
-      {totalPages > 1 && (
-        <div className="flex flex-wrap items-center justify-between gap-4 mt-4 py-3">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            Showing {(currentPage - 1) * PAGE_SIZE + 1} - {Math.min(currentPage * PAGE_SIZE, filtered.length)} / {filtered.length}
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => goToPage(page - 1)}
-              disabled={currentPage <= 1}
-              className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
-            >
-              ←
-            </button>
-            <div className="flex items-center gap-1">
-              {Array.from({ length: totalPages }, (_, i) => i + 1)
-                .filter((p) => {
-                  if (totalPages <= 7) return true;
-                  if (p === 1 || p === totalPages) return true;
-                  if (Math.abs(p - currentPage) <= 1) return true;
-                  return false;
-                })
-                .map((p, idx, arr) => {
-                  const prev = arr[idx - 1];
-                  const showEllipsis = prev !== undefined && p - prev > 1;
-                  return (
-                    <span key={p} className="flex items-center gap-1">
-                      {showEllipsis && <span className="px-1 text-gray-400 dark:text-gray-500">…</span>}
-                      <button
-                        onClick={() => goToPage(p)}
-                        className={`min-w-8 px-2 py-1.5 rounded-lg text-sm font-medium transition ${currentPage === p
-                            ? 'bg-blue-600 text-white'
-                            : 'border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-                          }`}
-                      >
-                        {p}
-                      </button>
-                    </span>
-                  );
-                })}
-            </div>
-            <button
-              onClick={() => goToPage(page + 1)}
-              disabled={currentPage >= totalPages}
-              className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
-            >
-              →
-            </button>
-          </div>
-        </div>
-      )}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        totalItems={filtered.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={goToPage}
+      />
 
       {/* MOBILE CARD VIEW */}
       <div className="md:hidden space-y-4">

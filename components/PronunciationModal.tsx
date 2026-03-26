@@ -16,9 +16,8 @@ export default function PronunciationModal({ word, onClose }: Props) {
   const [score, setScore] = useState<number | null>(null);
   const [listening, setListening] = useState(false);
 
-  const recognitionRef = useRef<any>(null);   // web only
-  const safetyTimerRef = useRef<any>(null);
-  const isMobileActiveRef = useRef(false);    // mobile only: đang có session thật không
+  const listeningRef = useRef(false); // web only
+  const recognitionRef = useRef<any>(null);
 
   // Lock scroll
   useEffect(() => {
@@ -27,25 +26,13 @@ export default function PronunciationModal({ word, onClose }: Props) {
     return () => { document.body.style.overflow = prev; };
   }, []);
 
-  // Init mobile permission
+  // Xin permission 1 lần khi mount
   useEffect(() => {
-    const init = async () => {
-      if (Capacitor.getPlatform() === 'web') return;
-      try { await SpeechRecognition.requestPermissions(); } catch (err) { console.log(err); }
-    };
-    init();
+    if (Capacitor.getPlatform() === 'web') return;
+    SpeechRecognition.requestPermissions().catch(() => { });
   }, []);
 
-  const clearSafetyTimer = () => {
-    if (safetyTimerRef.current) {
-      clearTimeout(safetyTimerRef.current);
-      safetyTimerRef.current = null;
-    }
-  };
-
-  const stopRecognition = async () => {
-    clearSafetyTimer();
-
+  const stopRecognition = () => {
     // Web
     if (recognitionRef.current) {
       try {
@@ -56,13 +43,11 @@ export default function PronunciationModal({ word, onClose }: Props) {
       } catch { }
       recognitionRef.current = null;
     }
-
-    // Mobile: chỉ stop khi đang có session thật
-    if (Capacitor.getPlatform() !== 'web' && isMobileActiveRef.current) {
-      isMobileActiveRef.current = false;
-      try { await SpeechRecognition.stop(); } catch { }
+    // Mobile
+    if (Capacitor.getPlatform() !== 'web') {
+      SpeechRecognition.stop().catch(() => { });
     }
-
+    listeningRef.current = false;
     setListening(false);
   };
 
@@ -71,78 +56,65 @@ export default function PronunciationModal({ word, onClose }: Props) {
     onClose();
   };
 
-  const startListening = async () => {
-    if (listening) return;
-
-    setSpoken('');
-    setScore(null);
-
-    // ─── MOBILE ───────────────────────────────────────────────────────────────
-    if (Capacitor.getPlatform() !== 'web') {
-      try {
-        const permission = await SpeechRecognition.checkPermissions();
-        if (permission.speechRecognition !== 'granted') {
-          const req = await SpeechRecognition.requestPermissions();
-          if (req.speechRecognition !== 'granted') {
-            alert('Microphone permission denied');
-            return;
-          }
-        }
-
-        // Nếu có session cũ còn sót, kill nó trước
-        if (isMobileActiveRef.current) {
-          isMobileActiveRef.current = false;
-          try { await SpeechRecognition.stop(); } catch { }
-          await new Promise((r) => setTimeout(r, 150));
-        }
-
-        setListening(true);
-        isMobileActiveRef.current = true;
-
-        try {
-          const result = await Promise.race([
-            SpeechRecognition.start({
-              language: 'en-US',
-              maxResults: 1,
-              partialResults: false,
-              popup: false,
-            }),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('TIMEOUT')), 10000)
-            ),
-          ]);
-
-          const transcript = (result as any)?.matches?.[0]?.toLowerCase().trim() || '';
-          if (transcript) {
-            setSpoken(transcript);
-            setScore(transcript === word.toLowerCase() ? 100 : 0);
-          }
-        } catch (err: any) {
-          console.log('Mobile speech error:', err?.message || err);
-          if (err?.message === 'TIMEOUT') {
-            try { await SpeechRecognition.stop(); } catch { }
-          }
-        } finally {
-          isMobileActiveRef.current = false;
-          setListening(false);
-        }
-
-        return;
-      } catch (err: any) {
-        console.log('Mobile outer error:', err);
-        isMobileActiveRef.current = false;
+  // ─── MOBILE ──────────────────────────────────────────────────────────────────
+  const startMobile = async () => {
+    const permission = await SpeechRecognition.checkPermissions();
+    if (permission.speechRecognition !== 'granted') {
+      const req = await SpeechRecognition.requestPermissions();
+      if (req.speechRecognition !== 'granted') {
+        alert('Microphone permission denied');
         setListening(false);
         return;
       }
     }
 
-    // ─── WEB ──────────────────────────────────────────────────────────────────
+    // Dọn session cũ
+    try { await SpeechRecognition.stop(); } catch { }
+    await new Promise((r) => setTimeout(r, 300));
+
+    let transcript = '';
+    try {
+      // await trực tiếp — finally đảm bảo luôn dừng
+      const result = await Promise.race([
+        SpeechRecognition.start({
+          language: 'en-US',
+          maxResults: 1,
+          partialResults: false,
+          popup: false,
+        }),
+        // Tự hủy sau 7s nếu native không trả về
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('TIMEOUT')), 7000)
+        ),
+      ]);
+      transcript = (result as any)?.matches?.[0]?.toLowerCase().trim() || '';
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      console.log('Mobile speech result:', msg);
+      // TIMEOUT → dọn native
+      if (msg === 'TIMEOUT') {
+        try { await SpeechRecognition.stop(); } catch { }
+      }
+    } finally {
+      // LUÔN LUÔN chạy — không quan tâm lỗi gì
+      setListening(false);
+    }
+
+    if (transcript) {
+      setSpoken(transcript);
+      setScore(transcript === word.toLowerCase() ? 100 : 0);
+    }
+  };
+
+  // ─── WEB ─────────────────────────────────────────────────────────────────────
+  const startWeb = async () => {
     const SpeechRecognitionAPI =
       (window as any).SpeechRecognition ||
       (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognitionAPI) {
       alert('Speech recognition not supported');
+      setListening(false);
       return;
     }
 
@@ -151,11 +123,10 @@ export default function PronunciationModal({ word, onClose }: Props) {
       stream.getTracks().forEach((t) => t.stop());
     } catch {
       alert('Microphone permission denied');
+      setListening(false);
       return;
     }
 
-    // Cleanup instance cũ (không gọi stopRecognition để tránh setListening sớm)
-    clearSafetyTimer();
     if (recognitionRef.current) {
       try {
         recognitionRef.current.onend = null;
@@ -173,46 +144,50 @@ export default function PronunciationModal({ word, onClose }: Props) {
     recognition.maxAlternatives = 1;
     recognition.continuous = false;
 
-    const cleanup = () => {
-      clearSafetyTimer();
-      recognitionRef.current = null;
-      setListening(false);
-    };
-
     recognition.onresult = (event: any) => {
       const r = event.results[0][0];
       const transcript = r.transcript.toLowerCase().trim();
       setSpoken(transcript);
       setScore(transcript === word.toLowerCase() ? Math.round((r.confidence ?? 0) * 100) : 0);
-      cleanup();
+      recognitionRef.current = null;
+      setListening(false);
     };
 
     recognition.onerror = (event: any) => {
       console.log('Web speech error:', event.error);
       if (event.error === 'not-allowed') alert('Microphone permission denied');
-      cleanup();
-    };
-
-    recognition.onend = () => {
-      clearSafetyTimer();
       recognitionRef.current = null;
       setListening(false);
     };
 
-    setListening(true);
+    recognition.onend = () => {
+      recognitionRef.current = null;
+      setListening(false);
+    };
 
     setTimeout(() => {
-      try {
-        recognition.start();
-        safetyTimerRef.current = setTimeout(() => {
-          console.log('Safety timeout');
-          stopRecognition();
-        }, 6000);
-      } catch (err) {
+      try { recognition.start(); } catch (err) {
         console.log('Start error:', err);
-        cleanup();
+        setListening(false);
       }
-    }, 250);
+    }, 150);
+  };
+
+  // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
+  const startListening = async () => {
+    if (listeningRef.current) return;
+    listeningRef.current = true;
+    setSpoken('');
+    setScore(null);
+    setListening(true);
+
+    if (Capacitor.getPlatform() !== 'web') {
+      await startMobile();
+    } else {
+      await startWeb();
+    }
+
+    listeningRef.current = false;
   };
 
   useEffect(() => {
