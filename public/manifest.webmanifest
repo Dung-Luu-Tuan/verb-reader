@@ -1,0 +1,21 @@
+{
+  "name": "Verb Reader",
+  "short_name": "Verb Reader",
+  "description": "Bộ từ động từ tiếng Anh cho việc học và ôn tập nhanh trên điện thoại.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

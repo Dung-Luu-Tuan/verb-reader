@@ -4,7 +4,27 @@ import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 import { Capacitor } from '@capacitor/core';
 import { Loader2, Mic, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import stringSimilarity from 'string-similarity';
 import Portal from './Portal';
+
+/**
+ * Fuzzy-score what was heard against the target word instead of requiring an
+ * exact match — speech recognition rarely transcribes perfectly, so an exact
+ * comparison scored almost everything as 0% regardless of real pronunciation.
+ */
+function scorePronunciation(spokenText: string, target: string): number {
+  const spoken = spokenText.toLowerCase().trim();
+  const targetWord = target.toLowerCase().trim();
+  if (!spoken) return 0;
+  if (spoken === targetWord) return 100;
+
+  // If the target word appears as one of the spoken words/tokens, that is a
+  // strong signal even if surrounded by recognizer noise.
+  if (spoken.split(/\s+/).includes(targetWord)) return 90;
+
+  const similarity = stringSimilarity.compareTwoStrings(spoken, targetWord);
+  return Math.round(similarity * 100);
+}
 
 interface Props {
   word: string;
@@ -115,7 +135,7 @@ export default function PronunciationModal({ word, onClose }: Props) {
           const transcript = (result as any)?.matches?.[0]?.toLowerCase().trim() || '';
           if (transcript) {
             setSpoken(transcript);
-            setScore(transcript === word.toLowerCase() ? 100 : 0);
+            setScore(scorePronunciation(transcript, word));
           }
         } catch (err: any) {
           console.log('Mobile speech error:', err?.message || err);
@@ -183,7 +203,7 @@ export default function PronunciationModal({ word, onClose }: Props) {
       const r = event.results[0][0];
       const transcript = r.transcript.toLowerCase().trim();
       setSpoken(transcript);
-      setScore(transcript === word.toLowerCase() ? Math.round((r.confidence ?? 0) * 100) : 0);
+      setScore(scorePronunciation(transcript, word));
       cleanup();
     };
 
@@ -229,7 +249,7 @@ export default function PronunciationModal({ word, onClose }: Props) {
     <Portal>
       <div
         onClick={handleClose}
-        className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-md"
+        className="fixed inset-0 z-9999 bg-black/60 backdrop-blur-md"
       >
         <div
           onClick={(e) => e.stopPropagation()}
