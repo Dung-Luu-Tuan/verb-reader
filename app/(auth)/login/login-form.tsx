@@ -7,7 +7,7 @@ import { Loader2, User, Lock } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { useApi } from "@/lib/useApi";
 
-export default function LoginPage() {
+export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login, accessToken } = useAuth();
@@ -108,7 +108,6 @@ export default function LoginPage() {
                 <label className="block text-sm font-medium text-gray-700" htmlFor="password">
                   Mật khẩu
                 </label>
-                {/* Optional: Add forgot password link here */}
               </div>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">

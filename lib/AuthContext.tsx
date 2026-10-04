@@ -53,15 +53,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
-  if (isLoadingContext) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        <p className="mt-4 text-sm text-gray-500 font-medium animate-pulse">Đang tải dữ liệu phiên bản...</p>
-      </div>
-    );
-  }
-
   return (
     <AuthContext.Provider value={{ accessToken, user, isLoadingContext, login, logout }}>
       {children}
