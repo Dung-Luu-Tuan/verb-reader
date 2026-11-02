@@ -69,6 +69,14 @@ function WordChips({ mark, revealed }: { mark: WordMark; revealed: number }) {
   if (mark.kind === "match") {
     return <span className="rounded-lg bg-emerald-100 px-2 py-1 font-semibold text-emerald-800">{mark.text}</span>;
   }
+  if (mark.kind === "near") {
+    return (
+      <span className="rounded-lg bg-teal-100 px-2 py-1 text-teal-800">
+        <span className="font-semibold">{mark.text}</span>
+        <span className="ml-1 text-[10px] font-bold tracking-wide">→ {mark.expected}</span>
+      </span>
+    );
+  }
   if (mark.kind === "extra") {
     return (
       <span className="rounded-lg bg-slate-200 px-2 py-1 text-slate-500">
@@ -128,6 +136,7 @@ export default function TranslatePage() {
   const [answer, setAnswer] = useState("");
   const [error, setError] = useState<{ sentenceId: string; message: string } | null>(null);
   const [practiceLevel, setPracticeLevel] = useState<PracticeLevel>("easy");
+  const [speaking, setSpeaking] = useState(false);
 
   useEffect(() => {
     const history = loadHistory();
@@ -151,11 +160,32 @@ export default function TranslatePage() {
     saveHistory(next);
   };
 
+  const speakEnglish = (text: string) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    if (speaking) {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-US";
+    utterance.rate = 0.85;
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    setSpeaking(true);
+    window.speechSynthesis.speak(utterance);
+  };
+
   const levelCounts = countByPracticeLevel(verbs);
   const visibleError = error && error.sentenceId === (current?.id ?? "") ? error.message : "";
 
   const createSentence = (level = practiceLevel) => {
     setError(null);
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+    }
     const recentVerbs = records.map((record) => record.focusVerb).filter((verb): verb is string => Boolean(verb));
     const seed = pickPracticeVerb(
       verbs,
@@ -334,6 +364,21 @@ export default function TranslatePage() {
                     )}
                     {lastAttempt.correct && lastAttempt.suggestion && (
                       <p className="mt-2 italic">Câu mẫu: {lastAttempt.suggestion}</p>
+                    )}
+                    {current.expectedEnglish && (
+                      <button
+                        type="button"
+                        onClick={() => speakEnglish(current.expectedEnglish!)}
+                        className={`mt-3 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-medium transition ${
+                          speaking ? "bg-blue-600 text-white" : "bg-blue-50 text-blue-700 hover:bg-blue-100"
+                        }`}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
+                          <path d="M11 5L6 9H2v6h4l5 4V5z" />
+                          <path d="M15.54 8.46a5 5 0 010 7.07" />
+                        </svg>
+                        {speaking ? "Dừng" : "Nghe đáp án"}
+                      </button>
                     )}
                   </div>
                 )}

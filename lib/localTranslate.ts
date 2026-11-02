@@ -95,6 +95,7 @@ function contentWords(text: string): string[] {
 
 export type WordMark =
   | { kind: "match"; text: string }
+  | { kind: "near"; text: string; expected: string }
   | { kind: "extra"; text: string }
   | { kind: "gap"; from: string[]; to: string[] };
 
@@ -107,6 +108,36 @@ function tokenize(text: string): { text: string; key: string }[] {
     .map((text) => ({ text, key: text.toLowerCase() }));
 }
 
+function wordsAreSimilar(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  if (short.length < 4) return false;
+  if (long.startsWith(short) && long.length - short.length <= 3) return true;
+  if (short.endsWith("e") && long.startsWith(short.slice(0, -1)) && long.length - short.length <= 3) return true;
+  if (Math.abs(a.length - b.length) <= 1) {
+    let diffs = 0;
+    let i = 0;
+    let j = 0;
+    while (i < a.length || j < b.length) {
+      if (i < a.length && j < b.length && a[i] === b[j]) {
+        i++;
+        j++;
+      } else {
+        diffs++;
+        if (diffs > 1) return false;
+        if (a.length > b.length) i++;
+        else if (b.length > a.length) j++;
+        else {
+          i++;
+          j++;
+        }
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
 export function diffAnswer(answer: string, expected: string): WordMark[] {
   const source = tokenize(answer);
   const target = tokenize(expected);
@@ -116,10 +147,9 @@ export function diffAnswer(answer: string, expected: string): WordMark[] {
 
   for (let i = 1; i < rows; i += 1) {
     for (let j = 1; j < cols; j += 1) {
-      length[i][j] =
-        source[i - 1].key === target[j - 1].key
-          ? length[i - 1][j - 1] + 1
-          : Math.max(length[i - 1][j], length[i][j - 1]);
+      length[i][j] = wordsAreSimilar(source[i - 1].key, target[j - 1].key)
+        ? length[i - 1][j - 1] + 1
+        : Math.max(length[i - 1][j], length[i][j - 1]);
     }
   }
 
@@ -127,7 +157,7 @@ export function diffAnswer(answer: string, expected: string): WordMark[] {
   let i = source.length;
   let j = target.length;
   while (i > 0 && j > 0) {
-    if (source[i - 1].key === target[j - 1].key) {
+    if (wordsAreSimilar(source[i - 1].key, target[j - 1].key)) {
       matches.push({ sourceIndex: i - 1, targetIndex: j - 1 });
       i -= 1;
       j -= 1;
@@ -155,7 +185,11 @@ export function diffAnswer(answer: string, expected: string): WordMark[] {
       source.slice(sourceCursor, match.sourceIndex).map((token) => token.text),
       target.slice(targetCursor, match.targetIndex).map((token) => token.text),
     );
-    marks.push({ kind: "match", text: source[match.sourceIndex].text });
+    if (source[match.sourceIndex].key === target[match.targetIndex].key) {
+      marks.push({ kind: "match", text: source[match.sourceIndex].text });
+    } else {
+      marks.push({ kind: "near", text: source[match.sourceIndex].text, expected: target[match.targetIndex].text });
+    }
     sourceCursor = match.sourceIndex + 1;
     targetCursor = match.targetIndex + 1;
   }
@@ -186,11 +220,14 @@ export function hintLines(marks: WordMark[]): string[] {
 }
 
 export function mistakeSummary(marks: WordMark[]): string {
-  const correct = marks.filter((mark) => mark.kind === "match").map((mark) => mark.text);
+  const exact = marks.filter((mark) => mark.kind === "match").map((mark) => mark.text);
+  const near = marks.filter((mark) => mark.kind === "near").map((mark) => mark.text);
   const extras = marks.filter((mark) => mark.kind === "extra").length;
   const fixes = marks.reduce((count, mark) => count + (mark.kind === "gap" ? mark.to.length : 0), 0);
   const parts: string[] = [];
-  parts.push(correct.length > 0 ? `Đúng: ${correct.join(", ")}.` : "Chưa có từ nào khớp câu mẫu.");
+  const allCorrect = [...exact, ...near];
+  parts.push(allCorrect.length > 0 ? `Đúng: ${allCorrect.join(", ")}.` : "Chưa có từ nào khớp câu mẫu.");
+  if (near.length > 0) parts.push(`${near.length} từ gần đúng, cần sửa dạng từ.`);
   if (fixes > 0) parts.push(`${fixes} từ cần sửa.`);
   if (extras > 0) parts.push(`${extras} từ thừa.`);
   return parts.join(" ");
@@ -206,20 +243,31 @@ export function gradeAgainstSample(answer: string, expected: string): GradeResul
   }
 
   const marks = diffAnswer(answer, expected);
-  if (marks.every((mark) => mark.kind === "match")) {
-    return { correct: true, feedback: "Khớp với câu mẫu.", suggestion };
+  const allMatched = marks.every((m) => m.kind === "match" || m.kind === "near");
+  if (allMatched) {
+    const hasNear = marks.some((m) => m.kind === "near");
+    return { correct: true, feedback: hasNear ? "Gần đúng! Kiểm tra lại dạng từ." : "Khớp với câu mẫu.", suggestion };
   }
 
+  const expectedTokenCount = tokenize(expected).length;
+  const matchCount = marks.filter((m) => m.kind === "match").length;
+  const nearCount = marks.filter((m) => m.kind === "near").length;
+  const totalMatched = matchCount + nearCount;
+  const matchRatio = expectedTokenCount > 0 ? totalMatched / expectedTokenCount : 0;
+
   const score = stringSimilarity.compareTwoStrings(normalizedAnswer, normalizedExpected);
-  const expectedWords = contentWords(expected);
-  const answerWords = new Set(normalizedAnswer.split(" "));
-  const covered = expectedWords.filter((word) => answerWords.has(word)).length;
-  const coverage = expectedWords.length === 0 ? score : covered / expectedWords.length;
-  const longEnough = normalizedAnswer.split(" ").length >= Math.max(3, Math.floor(normalizedExpected.split(" ").length * 0.6));
-  const correct = score >= 0.72 || (coverage >= 0.8 && score >= 0.4 && longEnough);
+
+  const answerTokens = normalizedAnswer.split(" ");
+  const expectedCW = contentWords(expected);
+  const covered = expectedCW.filter((w) => answerTokens.some((t) => t === w || wordsAreSimilar(t, w))).length;
+  const coverage = expectedCW.length === 0 ? score : covered / expectedCW.length;
+  const longEnough = answerTokens.length >= Math.max(3, Math.floor(normalizedExpected.split(" ").length * 0.6));
+
+  const correct = matchRatio >= 0.8 || score >= 0.8 || (coverage >= 0.8 && score >= 0.45 && longEnough);
 
   if (correct) {
-    return { correct: true, feedback: "Khớp với câu mẫu.", suggestion };
+    const hasNear = nearCount > 0;
+    return { correct: true, feedback: hasNear ? "Gần đúng! Kiểm tra lại dạng từ." : "Gần khớp với câu mẫu.", suggestion };
   }
   return { correct: false, feedback: mistakeSummary(marks), suggestion };
 }
